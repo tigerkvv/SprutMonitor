@@ -1,0 +1,22 @@
+﻿release: 1.0.0
+zabbix_version: "7.0"
+
+managed:
+  templates: true
+  items: true
+  triggers: true
+  discoveryRules: true
+  itemPrototypes: true
+  triggerPrototypes: true
+  valueMaps: true
+  graphs: true
+  templateDashboards: true
+
+protected:
+  hosts: true
+  hostMacros: true
+  interfaces: true
+  history: true
+  trends: true
+  events: true
+  problems: true

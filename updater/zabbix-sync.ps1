@@ -248,10 +248,17 @@ Write-Host "Получено шаблонов: $($templates.Count)"
 # Find used Value Maps
 # ------------------------------------------------------------
 
+$managedTemplateIdSet = @{}
+foreach ($templateId in $templateIds) {
+    $managedTemplateIdSet[[string]$templateId] = $true
+}
+
 $usedValueMapIds = @(
     $templates.items |
         Where-Object {
-            $_.valuemapid -and $_.valuemapid -ne "0"
+            $_.valuemapid -and
+            $_.valuemapid -ne "0" -and
+            $managedTemplateIdSet.ContainsKey([string]$_.hostid)
         } |
         ForEach-Object {
             $_.valuemapid
@@ -259,7 +266,7 @@ $usedValueMapIds = @(
         Sort-Object -Unique
 )
 
-Write-Host "Используется Value Maps: $($usedValueMapIds.Count)"
+Write-Host "Используется Value Maps, принадлежащих управляемым шаблонам: $($usedValueMapIds.Count)"
 
 if ($usedValueMapIds.Count -gt 0) {
 

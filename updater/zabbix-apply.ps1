@@ -105,7 +105,7 @@ $allTemplates = Invoke-ZabbixApi `
     -Token $token `
     -Id 10
 
-Write-Host "Templates ïîëó÷åíî: $($allTemplates.Count)"
+Write-Host "Templates received: $($allTemplates.Count)"
 
 $allValueMaps = Invoke-ZabbixApi `
     -Method "valuemap.get" `
@@ -115,7 +115,7 @@ $allValueMaps = Invoke-ZabbixApi `
     -Token $token `
     -Id 20
 
-Write-Host "Value Maps ïîëó÷åíî: $($allValueMaps.Count)"
+Write-Host "Value Maps received: $($allValueMaps.Count)"
 
 $allGraphs = Invoke-ZabbixApi `
     -Method "graph.get" `
@@ -125,7 +125,7 @@ $allGraphs = Invoke-ZabbixApi `
     -Token $token `
     -Id 30
 
-Write-Host "Graphs ïîëó÷åíî: $($allGraphs.Count)"
+Write-Host "Graphs received: $($allGraphs.Count)"
 
 $allActions = Invoke-ZabbixApi `
     -Method "action.get" `
@@ -135,7 +135,7 @@ $allActions = Invoke-ZabbixApi `
     -Token $token `
     -Id 40
 
-Write-Host "Trigger Actions ïîëó÷åíî: $($allActions.Count)"
+Write-Host "Trigger Actions received: $($allActions.Count)"
 
 Write-Host ""
 
@@ -186,7 +186,7 @@ function Get-MappingSignature {
     param($map)
 
     @($map.mappings | ForEach-Object {
-        "$($_.value)|$($_.newvalue)|$($_.type)"
+        "$($_.value)`|$($_.newvalue)`|$($_.type)"
     } | Sort-Object) -join ";;"
 }
 
@@ -212,7 +212,7 @@ foreach ($valueMap in $release.managed.valueMaps) {
         Write-Host "[UPDATE] $name -> valuemapid $($found[0].valuemapid)"
     }
     else {
-        Write-Host "[AMBIGUOUS] $name - совпадает несколько Value Maps"
+        Write-Host "[AMBIGUOUS] $name - multiple Graphs matched item key"
         $found |
             Select-Object valuemapid,name |
             Format-Table -AutoSize
@@ -239,7 +239,7 @@ $graphCandidates = Invoke-ZabbixApi `
     -Token $token `
     -Id 31
 
-Write-Host "Managed Graphs получено: $($graphCandidates.Count)"
+Write-Host "Managed Graph candidates: $($graphCandidates.Count)"
 
 foreach ($graph in $release.managed.graphs) {
 
@@ -288,13 +288,13 @@ foreach ($graph in $release.managed.graphs) {
         Write-Host "[UPDATE] $name -> graphid $($matched[0].graphid)"
     }
     elseif ($matched.Count -eq 0) {
-        Write-Host "[AMBIGUOUS] $name - не удалось однозначно определить Graph"
+        Write-Host "[AMBIGUOUS] $name - multiple Graphs matched item key"
         $found |
             Select-Object graphid,name,templateid |
             Format-Table -AutoSize
     }
     else {
-        Write-Host "[AMBIGUOUS] $name - несколько Graph совпали по item key"
+        Write-Host "[AMBIGUOUS] $name - multiple Graphs matched item key"
         $matched |
             Select-Object graphid,name,templateid |
             Format-Table -AutoSize

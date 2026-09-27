@@ -182,33 +182,37 @@ Write-Host ""
 # Value Maps
 # ------------------------------------------------------------
 
+function Get-MappingSignature {
+    param($map)
+
+    @($map.mappings | ForEach-Object {
+        "$($_.value)|$($_.newvalue)|$($_.type)"
+    } | Sort-Object) -join ";;"
+}
+
 Write-Host "=== Value Maps ==="
 
 foreach ($valueMap in $release.managed.valueMaps) {
 
     $name = $valueMap.name
+    $signature = Get-MappingSignature $valueMap
 
     $found = @(
         $allValueMaps |
             Where-Object {
-                $_.name -eq $name
+                $_.name -eq $name -and
+                (Get-MappingSignature $_) -eq $signature
             }
     )
 
     if ($found.Count -eq 0) {
-
         Write-Host "[CREATE] $name"
-
     }
     elseif ($found.Count -eq 1) {
-
         Write-Host "[UPDATE] $name -> valuemapid $($found[0].valuemapid)"
-
     }
     else {
-
-        Write-Host "[MULTIPLE] $name"
-
+        Write-Host "[AMBIGUOUS] $name - совпадает несколько Value Maps"
         $found |
             Select-Object valuemapid,name |
             Format-Table -AutoSize
@@ -223,32 +227,75 @@ Write-Host ""
 
 Write-Host "=== Graphs ==="
 
+$graphCandidates = Invoke-ZabbixApi `
+    -Method "graph.get" `
+    -Params @{
+        output = "extend"
+        templated = $true
+        inherited = $false
+        selectItems = "extend"
+        selectGraphItems = "extend"
+    } `
+    -Token $token `
+    -Id 31
+
+Write-Host "Managed Graphs получено: $($graphCandidates.Count)"
+
 foreach ($graph in $release.managed.graphs) {
 
     $name = $graph.name
 
     $found = @(
-        $allGraphs |
-            Where-Object {
-                $_.name -eq $name
-            }
+        $graphCandidates |
+            Where-Object { $_.name -eq $name }
     )
 
     if ($found.Count -eq 0) {
-
         Write-Host "[CREATE] $name"
-
+        continue
     }
-    elseif ($found.Count -eq 1) {
 
+    if ($found.Count -eq 1) {
         Write-Host "[UPDATE] $name -> graphid $($found[0].graphid)"
+        continue
+    }
 
+    $releaseKeys = @(
+        $graph.items |
+            ForEach-Object { $_.key_ } |
+            Where-Object { $_ }
+    )
+
+    $matched = @(
+        $found | Where-Object {
+            $candidateKeys = @(
+                $_.items |
+                    ForEach-Object { $_.key_ } |
+                    Where-Object { $_ }
+            )
+
+            $common = @(
+                $releaseKeys | Where-Object {
+                    $candidateKeys -contains $_
+                }
+            )
+
+            $common.Count -gt 0
+        }
+    )
+
+    if ($matched.Count -eq 1) {
+        Write-Host "[UPDATE] $name -> graphid $($matched[0].graphid)"
+    }
+    elseif ($matched.Count -eq 0) {
+        Write-Host "[AMBIGUOUS] $name - не удалось однозначно определить Graph"
+        $found |
+            Select-Object graphid,name,templateid |
+            Format-Table -AutoSize
     }
     else {
-
-        Write-Host "[MULTIPLE] $name"
-
-        $found |
+        Write-Host "[AMBIGUOUS] $name - несколько Graph совпали по item key"
+        $matched |
             Select-Object graphid,name,templateid |
             Format-Table -AutoSize
     }

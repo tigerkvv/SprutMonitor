@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== Sprut Monitor Zabbix Apply ==="
-Write-Host "Режим: PREVIEW — изменения НЕ выполняются"
+Write-Host "ГђГҐГ¦ГЁГ¬: PREVIEW вЂ” ГЁГ§Г¬ГҐГ­ГҐГ­ГЁГї ГЌГ… ГўГ»ГЇГ®Г«Г­ГїГѕГІГ±Гї"
 Write-Host ""
 
 # ------------------------------------------------------------
@@ -88,14 +88,14 @@ if (-not $auth.result) {
 
 $token = $auth.result
 
-Write-Host "Авторизация успешна."
+Write-Host "ГЂГўГІГ®Г°ГЁГ§Г Г¶ГЁГї ГіГ±ГЇГҐГёГ­Г ."
 Write-Host ""
 
 # ------------------------------------------------------------
 # Load PROD/DEV objects once
 # ------------------------------------------------------------
 
-Write-Host "Получение объектов Zabbix..."
+Write-Host "ГЏГ®Г«ГіГ·ГҐГ­ГЁГҐ Г®ГЎГєГҐГЄГІГ®Гў Zabbix..."
 
 $allTemplates = Invoke-ZabbixApi `
     -Method "template.get" `
@@ -105,7 +105,7 @@ $allTemplates = Invoke-ZabbixApi `
     -Token $token `
     -Id 10
 
-Write-Host "Templates получено: $($allTemplates.Count)"
+Write-Host "Templates ГЇГ®Г«ГіГ·ГҐГ­Г®: $($allTemplates.Count)"
 
 $allValueMaps = Invoke-ZabbixApi `
     -Method "valuemap.get" `
@@ -115,7 +115,7 @@ $allValueMaps = Invoke-ZabbixApi `
     -Token $token `
     -Id 20
 
-Write-Host "Value Maps получено: $($allValueMaps.Count)"
+Write-Host "Value Maps ГЇГ®Г«ГіГ·ГҐГ­Г®: $($allValueMaps.Count)"
 
 $allGraphs = Invoke-ZabbixApi `
     -Method "graph.get" `
@@ -125,7 +125,7 @@ $allGraphs = Invoke-ZabbixApi `
     -Token $token `
     -Id 30
 
-Write-Host "Graphs получено: $($allGraphs.Count)"
+Write-Host "Graphs ГЇГ®Г«ГіГ·ГҐГ­Г®: $($allGraphs.Count)"
 
 $allActions = Invoke-ZabbixApi `
     -Method "action.get" `
@@ -135,7 +135,7 @@ $allActions = Invoke-ZabbixApi `
     -Token $token `
     -Id 40
 
-Write-Host "Trigger Actions получено: $($allActions.Count)"
+Write-Host "Trigger Actions ГЇГ®Г«ГіГ·ГҐГ­Г®: $($allActions.Count)"
 
 Write-Host ""
 
@@ -311,4 +311,4 @@ Write-Host "[SKIP] Problems"
 
 Write-Host ""
 Write-Host "=== PREVIEW FINISHED ==="
-Write-Host "Изменения в Zabbix НЕ выполнялись."
+Write-Host "Г€Г§Г¬ГҐГ­ГҐГ­ГЁГї Гў Zabbix ГЌГ… ГўГ»ГЇГ®Г«Г­ГїГ«ГЁГ±Гј."

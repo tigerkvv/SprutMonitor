@@ -18,12 +18,16 @@ Write-Host "Release format: $($release.format)"
 Write-Host "Release version: 1.1.0"
 Write-Host ""
 
-$login = Read-Host "Zabbix username"
-$password = Read-Host "Zabbix password" -AsSecureString
+$login = [Environment]::GetEnvironmentVariable("ZABBIX_USERNAME", "Machine")
+$plainPassword = [Environment]::GetEnvironmentVariable("ZABBIX_PASSWORD", "Machine")
 
-$plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
-)
+if ([string]::IsNullOrWhiteSpace($login)) {
+    throw "System environment variable ZABBIX_USERNAME is not set."
+}
+
+if ([string]::IsNullOrWhiteSpace($plainPassword)) {
+    throw "System environment variable ZABBIX_PASSWORD is not set."
+}
 
 function Invoke-ZabbixApi {
     param(
@@ -174,29 +178,56 @@ foreach ($valueMap in $release.managed.valueMaps) {
 
     $name = $valueMap.name
     $signature = Get-MappingSignature $valueMap
+    $templateId = [string]$valueMap.hostid
+
+    if ([string]::IsNullOrWhiteSpace($templateId)) {
+        Write-Host "[ERROR] $name - release Value Map has no template binding"
+        continue
+    }
+
+    $templateName = ($release.managed.templates |
+        Where-Object { [string]$_.templateid -eq $templateId } |
+        Select-Object -First 1).name
+
+    if ([string]::IsNullOrWhiteSpace($templateName)) {
+        Write-Host "[ERROR] $name - source template $templateId is not in managed templates"
+        continue
+    }
+
+    $targetTemplate = @(
+        $allTemplates |
+            Where-Object { $_.name -eq $templateName }
+    )
+
+    if ($targetTemplate.Count -ne 1) {
+        Write-Host "[ERROR] $name - cannot resolve target template '$templateName'"
+        continue
+    }
+
+    $targetTemplateId = [string]$targetTemplate[0].templateid
 
     $found = @(
         $allValueMaps |
             Where-Object {
                 $_.name -eq $name -and
+                [string]$_.hostid -eq $targetTemplateId -and
                 (Get-MappingSignature $_) -eq $signature
             }
     )
 
     if ($found.Count -eq 0) {
-        Write-Host "[CREATE] $name"
+        Write-Host "[CREATE] $name -> template '$templateName'"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[UPDATE] $name -> valuemapid $($found[0].valuemapid)"
+        Write-Host "[UPDATE] $name -> valuemapid $($found[0].valuemapid), template '$templateName'"
     }
     else {
-        Write-Host "[AMBIGUOUS] $name - multiple matching Value Maps"
+        Write-Host "[AMBIGUOUS] $name - multiple Value Maps bound to template '$templateName'"
         $found |
-            Select-Object valuemapid,name |
+            Select-Object valuemapid,name,hostid |
             Format-Table -AutoSize
     }
 }
-
 Write-Host ""
 
 Write-Host "=== Graphs ==="
@@ -219,84 +250,100 @@ foreach ($graph in $release.managed.graphs) {
 
     $name = $graph.name
 
+    # Graphs are always matched through the template bound to their items.
+    $releaseTemplateIds = @(
+        @($graph.items) |
+            Where-Object { $_.hostid } |
+            ForEach-Object { [string]$_.hostid } |
+            Sort-Object -Unique
+    )
+
+    if ($releaseTemplateIds.Count -eq 0) {
+        Write-Host "[ERROR] $name - release Graph has no template-bound items"
+        continue
+    }
+
+    $releaseTemplateNames = @(
+        foreach ($templateId in $releaseTemplateIds) {
+            $t = $release.managed.templates |
+                Where-Object { [string]$_.templateid -eq $templateId } |
+                Select-Object -First 1
+            if ($t) { $t.name }
+        }
+    )
+
+    if ($releaseTemplateNames.Count -eq 0) {
+        Write-Host "[ERROR] $name - source template is not in managed templates"
+        continue
+    }
+
+    $targetTemplateIds = @(
+        foreach ($templateName in $releaseTemplateNames) {
+            $t = @($allTemplates | Where-Object { $_.name -eq $templateName })
+            if ($t.Count -eq 1) { [string]$t[0].templateid }
+        }
+    ) | Sort-Object -Unique
+
+    if ($targetTemplateIds.Count -eq 0) {
+        Write-Host "[ERROR] $name - cannot resolve target template"
+        continue
+    }
+
+    $releaseKeys = @(
+        @($graph.items) |
+            Where-Object { $_.key_ } |
+            ForEach-Object { [string]$_.key_ } |
+            Sort-Object -Unique
+    )
+
     $found = @(
         $graphCandidates |
             Where-Object {
-                $_.name -eq $name
+                if ($_.name -ne $name) { return $false }
+
+                $candidateTemplateIds = @(
+                    @($_.items) |
+                        Where-Object { $_.hostid } |
+                        ForEach-Object { [string]$_.hostid } |
+                        Sort-Object -Unique
+                )
+
+                $templateMatch = @(
+                    $candidateTemplateIds |
+                        Where-Object { $targetTemplateIds -contains $_ }
+                )
+
+                if ($templateMatch.Count -eq 0) { return $false }
+
+                if ($releaseKeys.Count -gt 0) {
+                    $candidateKeys = @(
+                        @($_.items) |
+                            Where-Object { $_.key_ } |
+                            ForEach-Object { [string]$_.key_ } |
+                            Sort-Object -Unique
+                    )
+
+                    $common = @(
+                        $releaseKeys |
+                            Where-Object { $candidateKeys -contains $_ }
+                    )
+
+                    return ($common.Count -gt 0)
+                }
+
+                return $true
             }
     )
 
     if ($found.Count -eq 0) {
-        Write-Host "[CREATE] $name"
-        continue
+        Write-Host "[CREATE] $name -> template '$($releaseTemplateNames -join ', ')'"
     }
-
-    if ($found.Count -eq 1) {
-        Write-Host "[UPDATE] $name -> graphid $($found[0].graphid)"
-        continue
-    }
-
-    $templateGraphs = @(
-        $found |
-            Where-Object {
-                [string]$_.templateid -eq "0"
-            }
-    )
-
-    if ($templateGraphs.Count -eq 1) {
-        Write-Host "[UPDATE] $name -> graphid $($templateGraphs[0].graphid)"
-        continue
-    }
-
-    if ($templateGraphs.Count -gt 1) {
-        Write-Host "[AMBIGUOUS] $name - multiple template Graphs with templateid 0"
-        $templateGraphs |
-            Select-Object graphid,name,templateid |
-            Format-Table -AutoSize
-        continue
-    }
-
-    $releaseKeys = @()
-
-    foreach ($item in @($graph.items)) {
-        if ($item.key_) {
-            $releaseKeys += [string]$item.key_
-        }
-    }
-
-    $matched = @(
-        $found | Where-Object {
-
-            $candidateKeys = @()
-
-            foreach ($item in @($_.items)) {
-                if ($item.key_) {
-                    $candidateKeys += [string]$item.key_
-                }
-            }
-
-            $common = @(
-                $releaseKeys | Where-Object {
-                    $candidateKeys -contains $_
-                }
-            )
-
-            $common.Count -gt 0
-        }
-    )
-
-    if ($matched.Count -eq 1) {
-        Write-Host "[UPDATE] $name -> graphid $($matched[0].graphid)"
-    }
-    elseif ($matched.Count -eq 0) {
-        Write-Host "[AMBIGUOUS] $name - could not determine Graph uniquely"
-        $found |
-            Select-Object graphid,name,templateid |
-            Format-Table -AutoSize
+    elseif ($found.Count -eq 1) {
+        Write-Host "[UPDATE] $name -> graphid $($found[0].graphid), template '$($releaseTemplateNames -join ', ')'"
     }
     else {
-        Write-Host "[AMBIGUOUS] $name - multiple Graphs matched item key"
-        $matched |
+        Write-Host "[AMBIGUOUS] $name - multiple Graphs bound to template '$($releaseTemplateNames -join ', ')'"
+        $found |
             Select-Object graphid,name,templateid |
             Format-Table -AutoSize
     }

@@ -5,12 +5,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== Sprut Monitor Zabbix Apply ==="
-Write-Host "Ðåæèì: PREVIEW — èçìåíåíèÿ ÍÅ âûïîëíÿþòñÿ"
+Write-Host "Mode: PREVIEW - no changes will be made"
 Write-Host ""
-
-# ------------------------------------------------------------
-# Load release
-# ------------------------------------------------------------
 
 if (-not (Test-Path $ReleasePath)) {
     throw "Release not found: $ReleasePath"
@@ -21,10 +17,6 @@ $release = Get-Content $ReleasePath -Raw | ConvertFrom-Json
 Write-Host "Release format: $($release.format)"
 Write-Host "Release version: 1.1.0"
 Write-Host ""
-
-# ------------------------------------------------------------
-# Zabbix API
-# ------------------------------------------------------------
 
 $login = Read-Host "Zabbix username"
 $password = Read-Host "Zabbix password" -AsSecureString
@@ -62,10 +54,6 @@ function Invoke-ZabbixApi {
     return $response.result
 }
 
-# ------------------------------------------------------------
-# Login
-# ------------------------------------------------------------
-
 $loginBody = @{
     jsonrpc = "2.0"
     method  = "user.login"
@@ -88,14 +76,10 @@ if (-not $auth.result) {
 
 $token = $auth.result
 
-Write-Host "Àâòîðèçàöèÿ óñïåøíà."
+Write-Host "Authentication successful."
 Write-Host ""
 
-# ------------------------------------------------------------
-# Load PROD/DEV objects once
-# ------------------------------------------------------------
-
-Write-Host "Ïîëó÷åíèå îáúåêòîâ Zabbix..."
+Write-Host "Loading Zabbix objects..."
 
 $allTemplates = Invoke-ZabbixApi `
     -Method "template.get" `
@@ -136,12 +120,7 @@ $allActions = Invoke-ZabbixApi `
     -Id 40
 
 Write-Host "Trigger Actions received: $($allActions.Count)"
-
 Write-Host ""
-
-# ------------------------------------------------------------
-# Templates
-# ------------------------------------------------------------
 
 Write-Host "=== Templates ==="
 
@@ -157,19 +136,13 @@ foreach ($template in $release.managed.templates) {
     )
 
     if ($found.Count -eq 0) {
-
         Write-Host "[CREATE] $name"
-
     }
     elseif ($found.Count -eq 1) {
-
         Write-Host "[UPDATE] $name -> templateid $($found[0].templateid)"
-
     }
     else {
-
         Write-Host "[ERROR] Multiple templates with exact name: $name"
-
         $found |
             Select-Object templateid,name |
             Format-Table -AutoSize
@@ -178,16 +151,20 @@ foreach ($template in $release.managed.templates) {
 
 Write-Host ""
 
-# ------------------------------------------------------------
-# Value Maps
-# ------------------------------------------------------------
-
 function Get-MappingSignature {
     param($map)
 
-    @($map.mappings | ForEach-Object {
-        "$($_.value)`|$($_.newvalue)`|$($_.type)"
-    } | Sort-Object) -join ";;"
+    $parts = @()
+
+    foreach ($mapping in @($map.mappings)) {
+        $parts += (
+            [string]$mapping.value + "|" +
+            [string]$mapping.newvalue + "|" +
+            [string]$mapping.type
+        )
+    }
+
+    return (($parts | Sort-Object) -join ";;")
 }
 
 Write-Host "=== Value Maps ==="
@@ -212,7 +189,7 @@ foreach ($valueMap in $release.managed.valueMaps) {
         Write-Host "[UPDATE] $name -> valuemapid $($found[0].valuemapid)"
     }
     else {
-        Write-Host "[AMBIGUOUS] $name - multiple Graphs matched item key"
+        Write-Host "[AMBIGUOUS] $name - multiple matching Value Maps"
         $found |
             Select-Object valuemapid,name |
             Format-Table -AutoSize
@@ -220,10 +197,6 @@ foreach ($valueMap in $release.managed.valueMaps) {
 }
 
 Write-Host ""
-
-# ------------------------------------------------------------
-# Graphs
-# ------------------------------------------------------------
 
 Write-Host "=== Graphs ==="
 
@@ -247,7 +220,9 @@ foreach ($graph in $release.managed.graphs) {
 
     $found = @(
         $graphCandidates |
-            Where-Object { $_.name -eq $name }
+            Where-Object {
+                $_.name -eq $name
+            }
     )
 
     if ($found.Count -eq 0) {
@@ -260,19 +235,24 @@ foreach ($graph in $release.managed.graphs) {
         continue
     }
 
-    $releaseKeys = @(
-        $graph.items |
-            ForEach-Object { $_.key_ } |
-            Where-Object { $_ }
-    )
+    $releaseKeys = @()
+
+    foreach ($item in @($graph.items)) {
+        if ($item.key_) {
+            $releaseKeys += [string]$item.key_
+        }
+    }
 
     $matched = @(
         $found | Where-Object {
-            $candidateKeys = @(
-                $_.items |
-                    ForEach-Object { $_.key_ } |
-                    Where-Object { $_ }
-            )
+
+            $candidateKeys = @()
+
+            foreach ($item in @($_.items)) {
+                if ($item.key_) {
+                    $candidateKeys += [string]$item.key_
+                }
+            }
 
             $common = @(
                 $releaseKeys | Where-Object {
@@ -288,7 +268,7 @@ foreach ($graph in $release.managed.graphs) {
         Write-Host "[UPDATE] $name -> graphid $($matched[0].graphid)"
     }
     elseif ($matched.Count -eq 0) {
-        Write-Host "[AMBIGUOUS] $name - multiple Graphs matched item key"
+        Write-Host "[AMBIGUOUS] $name - could not determine Graph uniquely"
         $found |
             Select-Object graphid,name,templateid |
             Format-Table -AutoSize
@@ -302,10 +282,6 @@ foreach ($graph in $release.managed.graphs) {
 }
 
 Write-Host ""
-
-# ------------------------------------------------------------
-# Trigger Actions
-# ------------------------------------------------------------
 
 Write-Host "=== Trigger Actions ==="
 
@@ -321,19 +297,13 @@ foreach ($action in $release.managed.triggerActions) {
     )
 
     if ($found.Count -eq 0) {
-
         Write-Host "[CREATE] $name"
-
     }
     elseif ($found.Count -eq 1) {
-
         Write-Host "[UPDATE] $name -> actionid $($found[0].actionid)"
-
     }
     else {
-
         Write-Host "[MULTIPLE] $name"
-
         $found |
             Select-Object actionid,name,status,eventsource |
             Format-Table -AutoSize
@@ -342,12 +312,7 @@ foreach ($action in $release.managed.triggerActions) {
 
 Write-Host ""
 
-# ------------------------------------------------------------
-# Protected objects
-# ------------------------------------------------------------
-
 Write-Host "=== PROTECTED ==="
-
 Write-Host "[SKIP] Hosts"
 Write-Host "[SKIP] Host macros"
 Write-Host "[SKIP] Host interfaces"
@@ -358,4 +323,4 @@ Write-Host "[SKIP] Problems"
 
 Write-Host ""
 Write-Host "=== PREVIEW FINISHED ==="
-Write-Host "Èçìåíåíèÿ â Zabbix ÍÅ âûïîëíÿëèñü."
+Write-Host "Zabbix changes were NOT executed."

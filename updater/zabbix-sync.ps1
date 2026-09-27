@@ -282,7 +282,7 @@ $valueMaps = @()
 
 if ($usedValueMapIds.Count -gt 0) {
 
-    $valueMaps = Invoke-ZabbixApi `
+    $allUsedValueMaps = Invoke-ZabbixApi `
         -Method "valuemap.get" `
         -Params @{
             valuemapids = $usedValueMapIds
@@ -291,9 +291,16 @@ if ($usedValueMapIds.Count -gt 0) {
         } `
         -Token $token `
         -Id 3
+
+    $valueMaps = @(
+        $allUsedValueMaps |
+            Where-Object {
+                $managedTemplateIdSet.ContainsKey([string]$_.hostid)
+            }
+    )
 }
 
-Write-Host "Экспортировано Value Maps: $($valueMaps.Count)"
+Write-Host "Экспортировано Value Maps, принадлежащих управляемым шаблонам: $($valueMaps.Count)"
 
 # ------------------------------------------------------------
 # Export Graphs

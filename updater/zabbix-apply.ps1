@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== Sprut Monitor Zabbix Apply ==="
-Write-Host "Mode: PREVIEW - no changes will be made"
+Write-Host "Mode: PREVIEW - matching only, no changes will be made"
 Write-Host ""
 
 if (-not (Test-Path $ReleasePath)) {
@@ -125,6 +125,48 @@ $allActions = Invoke-ZabbixApi `
     -Id 40
 
 Write-Host "Trigger Actions received: $($allActions.Count)"
+
+$managedTemplateTargetIds = @(
+    foreach ($template in $release.managed.templates) {
+        $target = @(
+            $allTemplates |
+                Where-Object { $_.name -eq $template.name }
+        )
+        if ($target.Count -eq 1) {
+            [string]$target[0].templateid
+        }
+    }
+) | Sort-Object -Unique
+
+$allItems = @()
+$allTriggers = @()
+
+if ($managedTemplateTargetIds.Count -gt 0) {
+    $allItems = Invoke-ZabbixApi `
+        -Method "item.get" `
+        -Params @{
+            hostids = $managedTemplateTargetIds
+            output = "extend"
+            selectPreprocessing = "extend"
+            selectTags = "extend"
+        } `
+        -Token $token `
+        -Id 50
+
+    $allTriggers = Invoke-ZabbixApi `
+        -Method "trigger.get" `
+        -Params @{
+            hostids = $managedTemplateTargetIds
+            output = "extend"
+            selectTags = "extend"
+            selectDependencies = "extend"
+        } `
+        -Token $token `
+        -Id 51
+}
+
+Write-Host "Items received: $($allItems.Count)"
+Write-Host "Triggers received: $($allTriggers.Count)"
 Write-Host ""
 
 Write-Host "=== Templates ==="
@@ -171,6 +213,118 @@ function Get-MappingSignature {
 
     return (($parts | Sort-Object) -join ";;")
 }
+
+Write-Host "=== Items ==="
+
+foreach ($releaseTemplate in $release.managed.templates) {
+
+    $templateName = $releaseTemplate.name
+
+    $targetTemplate = @(
+        $allTemplates |
+            Where-Object { $_.name -eq $templateName }
+    )
+
+    if ($targetTemplate.Count -ne 1) {
+        Write-Host "[ERROR] Template '$templateName' cannot be resolved for Items"
+        continue
+    }
+
+    $targetTemplateId = [string]$targetTemplate[0].templateid
+
+    foreach ($item in @($releaseTemplate.items)) {
+
+        $itemName = $item.name
+        $itemKey = [string]$item.key_
+        $itemUuid = [string]$item.uuid
+
+        $found = @(
+            $allItems |
+                Where-Object {
+                    [string]$_.hostid -eq $targetTemplateId -and
+                    (
+                        ($itemUuid -and [string]$_.uuid -eq $itemUuid) -or
+                        (
+                            -not $itemUuid -and
+                            $itemKey -and
+                            [string]$_.key_ -eq $itemKey
+                        )
+                    )
+                }
+        )
+
+        if ($found.Count -eq 0) {
+            Write-Host "[CREATE] $itemName [$itemKey] -> template '$templateName'"
+        }
+        elseif ($found.Count -eq 1) {
+            Write-Host "[UPDATE] $itemName [$itemKey] -> itemid $($found[0].itemid), template '$templateName'"
+        }
+        else {
+            Write-Host "[AMBIGUOUS] $itemName [$itemKey] - multiple Items matched in template '$templateName'"
+            $found |
+                Select-Object itemid,name,key_,uuid,hostid |
+                Format-Table -AutoSize
+        }
+    }
+}
+
+Write-Host ""
+
+Write-Host "=== Triggers ==="
+
+foreach ($releaseTemplate in $release.managed.templates) {
+
+    $templateName = $releaseTemplate.name
+
+    $targetTemplate = @(
+        $allTemplates |
+            Where-Object { $_.name -eq $templateName }
+    )
+
+    if ($targetTemplate.Count -ne 1) {
+        Write-Host "[ERROR] Template '$templateName' cannot be resolved for Triggers"
+        continue
+    }
+
+    $targetTemplateId = [string]$targetTemplate[0].templateid
+
+    foreach ($trigger in @($releaseTemplate.triggers)) {
+
+        $triggerName = $trigger.description
+        $triggerUuid = [string]$trigger.uuid
+        $triggerExpression = [string]$trigger.expression
+
+        $found = @(
+            $allTriggers |
+                Where-Object {
+                    [string]$_.hostid -eq $targetTemplateId -and
+                    (
+                        ($triggerUuid -and [string]$_.uuid -eq $triggerUuid) -or
+                        (
+                            -not $triggerUuid -and
+                            $triggerExpression -and
+                            [string]$_.expression -eq $triggerExpression
+                        )
+                    )
+                }
+        )
+
+        if ($found.Count -eq 0) {
+            Write-Host "[CREATE] $triggerName -> template '$templateName'"
+        }
+        elseif ($found.Count -eq 1) {
+            Write-Host "[UPDATE] $triggerName -> triggerid $($found[0].triggerid), template '$templateName'"
+        }
+        else {
+            Write-Host "[AMBIGUOUS] $triggerName - multiple Triggers matched in template '$templateName'"
+            $found |
+                Select-Object triggerid,description,expression,uuid,hostid |
+                Format-Table -AutoSize
+        }
+    }
+}
+
+Write-Host ""
 
 Write-Host "=== Value Maps ==="
 

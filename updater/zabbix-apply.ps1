@@ -95,6 +95,7 @@ $allValueMaps = Invoke-ZabbixApi `
     -Method "valuemap.get" `
     -Params @{
         output = "extend"
+        selectMappings = "extend"
     } `
     -Token $token `
     -Id 20
@@ -232,6 +233,26 @@ foreach ($graph in $release.managed.graphs) {
 
     if ($found.Count -eq 1) {
         Write-Host "[UPDATE] $name -> graphid $($found[0].graphid)"
+        continue
+    }
+
+    $templateGraphs = @(
+        $found |
+            Where-Object {
+                [string]$_.templateid -eq "0"
+            }
+    )
+
+    if ($templateGraphs.Count -eq 1) {
+        Write-Host "[UPDATE] $name -> graphid $($templateGraphs[0].graphid)"
+        continue
+    }
+
+    if ($templateGraphs.Count -gt 1) {
+        Write-Host "[AMBIGUOUS] $name - multiple template Graphs with templateid 0"
+        $templateGraphs |
+            Select-Object graphid,name,templateid |
+            Format-Table -AutoSize
         continue
     }
 

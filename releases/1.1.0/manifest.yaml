@@ -2,15 +2,24 @@
 zabbix_version: "7.0"
 
 managed:
-  templates: true
+  templates:
+    - Provider
+    - EcoFlow Station by API
+    - Mikrotik by SNMP
+
   items: true
   triggers: true
-  discoveryRules: true
-  itemPrototypes: true
-  triggerPrototypes: true
   valueMaps: true
   graphs: true
+  mediaTypes: true
   templateDashboards: true
+  triggerActions:
+    - "EcoFlow Сповіщення: Заряд 90%"
+    - "EcoFlow Сповіщення: Заряд 33%"
+    - "EcoFlow Сповіщення: Критичний заряд 15%"
+    - "Інтернет сповіщення: Основне (оптика On/Off)"
+    - "EcoFlow Генератор: Старт 15 спроб"
+    - "EcoFlow Генератор: Стоп 15 спроб"
 
 protected:
   hosts: true
@@ -20,4 +29,3 @@ protected:
   trends: true
   events: true
   problems: true
-

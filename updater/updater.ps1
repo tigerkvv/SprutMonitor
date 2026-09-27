@@ -6,44 +6,31 @@ $config = Get-Content $configPath -Raw | ConvertFrom-Json
 $repo = $config.repository
 $currentVersion = [version]$config.currentVersion
 
-$apiUrl = "https://api.github.com/repos/$repo/contents/releases"
-
 $headers = @{
     "Accept" = "application/vnd.github+json"
     "User-Agent" = "SprutMonitor-Updater"
 }
+
+$releasesApi = "https://api.github.com/repos/$repo/contents/releases"
 
 Write-Host "Sprut Monitor Updater"
 Write-Host "---------------------"
 Write-Host "Текущая версия: $currentVersion"
 Write-Host "Проверка обновлений..."
 
-try {
-    $releases = Invoke-RestMethod `
-        -Uri $apiUrl `
-        -Headers $headers `
-        -Method Get
-}
-catch {
-    Write-Host ""
-    Write-Host "Не удалось проверить обновления."
-    Write-Host $_.Exception.Message
-    exit 1
-}
+$releases = Invoke-RestMethod `
+    -Uri $releasesApi `
+    -Headers $headers `
+    -Method Get
 
 $versions = foreach ($item in $releases) {
     if ($item.type -eq "dir" -and $item.name -match '^\d+\.\d+\.\d+$') {
-        try {
-            [version]$item.name
-        }
-        catch {
-        }
+        [version]$item.name
     }
 }
 
 if (-not $versions) {
-    Write-Host ""
-    Write-Host "В репозитории нет опубликованных версий."
+    Write-Host "Опубликованных версий нет."
     exit 1
 }
 
@@ -51,17 +38,62 @@ $latestVersion = $versions | Sort-Object -Descending | Select-Object -First 1
 
 Write-Host "Последняя версия: $latestVersion"
 
-if ($latestVersion -gt $currentVersion) {
+if ($latestVersion -le $currentVersion) {
     Write-Host ""
-    Write-Host "ДОСТУПНО ОБНОВЛЕНИЕ"
-    Write-Host "Версия: $latestVersion"
-    Write-Host ""
-    Write-Host "Каталог релиза:"
-    Write-Host "https://github.com/$repo/tree/main/releases/$latestVersion"
-
-    exit 10
+    Write-Host "Обновлений нет."
+    exit 0
 }
 
 Write-Host ""
-Write-Host "Обновлений нет."
-exit 0
+Write-Host "Доступно обновление: $latestVersion"
+Write-Host ""
+
+$answer = Read-Host "Установить обновление? (Y/N)"
+
+if ($answer -notmatch '^(Y|y|Д|д)$') {
+    Write-Host ""
+    Write-Host "Обновление отклонено."
+    exit 20
+}
+
+$releasePath = "releases/$latestVersion"
+$releaseApi = "https://api.github.com/repos/$repo/contents/$releasePath"
+
+$tempPath = Join-Path $env:TEMP "SprutMonitor-Updater\$latestVersion"
+
+if (Test-Path $tempPath) {
+    Remove-Item $tempPath -Recurse -Force
+}
+
+New-Item -ItemType Directory -Path $tempPath -Force | Out-Null
+
+Write-Host ""
+Write-Host "Скачивание релиза $latestVersion..."
+
+$files = Invoke-RestMethod `
+    -Uri $releaseApi `
+    -Headers $headers `
+    -Method Get
+
+foreach ($file in $files) {
+    if ($file.type -ne "file") {
+        continue
+    }
+
+    $destination = Join-Path $tempPath $file.name
+
+    Write-Host "  $($file.name)"
+
+    Invoke-WebRequest `
+        -Uri $file.download_url `
+        -Headers @{ "User-Agent" = "SprutMonitor-Updater" } `
+        -OutFile $destination
+}
+
+Write-Host ""
+Write-Host "Релиз скачан:"
+Write-Host $tempPath
+Write-Host ""
+Write-Host "Zabbix пока НЕ изменялся."
+
+exit 10

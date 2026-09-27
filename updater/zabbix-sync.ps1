@@ -6,12 +6,16 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "=== Sprut Monitor Zabbix Sync ==="
 
-$login = Read-Host "Zabbix username"
-$password = Read-Host "Zabbix password" -AsSecureString
+$login = [Environment]::GetEnvironmentVariable("ZABBIX_USERNAME", "Machine")
+$plainPassword = [Environment]::GetEnvironmentVariable("ZABBIX_PASSWORD", "Machine")
 
-$plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
-)
+if ([string]::IsNullOrWhiteSpace($login)) {
+    throw "System environment variable ZABBIX_USERNAME is not set."
+}
+
+if ([string]::IsNullOrWhiteSpace($plainPassword)) {
+    throw "System environment variable ZABBIX_PASSWORD is not set."
+}
 
 function Invoke-ZabbixApi {
     param(

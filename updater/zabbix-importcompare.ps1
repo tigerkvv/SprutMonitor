@@ -1,7 +1,8 @@
 param(
     [string]$ReleaseVersion = "2.0.0",
     [string]$ApiUrl = "http://localhost/api_jsonrpc.php",
-    [int]$TimeoutSec = 300
+    [int]$TimeoutSec = 300,
+    [string]$InputPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,14 +19,25 @@ Write-Status "Release: $ReleaseVersion"
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $releasePath = Join-Path $repoRoot "releases\$ReleaseVersion"
-$sourcePath = Join-Path $releasePath "zabbix-export.yaml"
+
+if ([string]::IsNullOrWhiteSpace($InputPath)) {
+    $sourcePath = Join-Path $releasePath "zabbix-export.yaml"
+}
+else {
+    if ([System.IO.Path]::IsPathRooted($InputPath)) {
+        $sourcePath = $InputPath
+    }
+    else {
+        $sourcePath = Join-Path $repoRoot $InputPath
+    }
+}
 
 if (-not (Test-Path $sourcePath)) {
     throw "Native Zabbix export not found: $sourcePath"
 }
 
 Write-Status "Reading native export: $sourcePath"
-$source = Get-Content $sourcePath -Raw
+$source = [System.IO.File]::ReadAllText($sourcePath, (New-Object System.Text.UTF8Encoding($false)))
 $sourceBytes = [System.Text.Encoding]::UTF8.GetByteCount($source)
 Write-Status ("Native export loaded: {0:N0} bytes" -f $sourceBytes)
 
@@ -89,7 +101,7 @@ function Invoke-ZabbixApi {
             }
 
             $waited = [int]((Get-Date) - $waitStart).TotalSeconds
-            Write-Host ("`r[{0,6}s] Waiting for Zabbix response... state={1}" -f $waited, $state) -NoNewline
+            Write-Host ("\r[{0,6}s] Waiting for Zabbix response... state={1}" -f $waited, $state) -NoNewline
             Start-Sleep -Seconds 1
 
             if (((Get-Date) - $waitStart).TotalSeconds -ge $TimeoutSec) {

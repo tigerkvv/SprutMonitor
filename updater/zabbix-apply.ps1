@@ -388,7 +388,6 @@ foreach ($releaseTemplate in $release.managed.templates) {
         $found = @(
             $allTriggers |
                 Where-Object {
-                    [string]$_.hostid -eq $targetTemplateId -and
                     [string]$_.description -eq $triggerName
                 }
         )

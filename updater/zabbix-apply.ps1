@@ -383,23 +383,13 @@ foreach ($releaseTemplate in $release.managed.templates) {
 
     foreach ($trigger in @($releaseTemplate.triggers)) {
 
-        $triggerName = $trigger.description
-        $triggerUuid = [string]$trigger.uuid
-        $triggerExpression = [string]$trigger.expression
+        $triggerName = [string]$trigger.description
 
         $found = @(
             $allTriggers |
                 Where-Object {
                     [string]$_.hostid -eq $targetTemplateId -and
-                    (
-                        (
-                            $triggerUuid -and [string]$_.uuid -eq $triggerUuid
-                        ) -or
-                        (
-                            $triggerExpression -and
-                            [string]$_.expression -eq $triggerExpression
-                        )
-                    )
+                    [string]$_.description -eq $triggerName
                 }
         )
 

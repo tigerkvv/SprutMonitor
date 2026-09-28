@@ -37,13 +37,18 @@ function Invoke-ZabbixApi {
         [int]$Id
     )
 
-    $body = @{
+    $request = @{
         jsonrpc = "2.0"
         method = $Method
         params = $Params
-        auth = $Token
         id = $Id
-    } | ConvertTo-Json -Depth 100
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Token)) {
+        $request.auth = $Token
+    }
+
+    $body = $request | ConvertTo-Json -Depth 100
 
     $response = Invoke-RestMethod -Uri $ApiUrl -Method Post -ContentType "application/json-rpc" -Body $body
 

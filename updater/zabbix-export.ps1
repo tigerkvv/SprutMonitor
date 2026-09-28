@@ -1,18 +1,25 @@
 param(
     [string]$ReleaseVersion = "2.0.0",
-    [string]$OutputPath = ""
+    [string]$OutputPath = "",
+    [string]$Template = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$releasePath = Join-Path $repoRoot "releases\\$ReleaseVersion"
+$releasePath = Join-Path $repoRoot "releases\$ReleaseVersion"
 $manifestPath = Join-Path $releasePath "manifest.yaml"
 
 if (-not (Test-Path $manifestPath)) { throw "Release manifest not found: $manifestPath" }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $OutputPath = Join-Path $releasePath "zabbix-export.yaml"
+    if ([string]::IsNullOrWhiteSpace($Template)) {
+        $OutputPath = Join-Path $releasePath "zabbix-export.yaml"
+    }
+    else {
+        $safeTemplate = ($Template -replace '[^a-zA-Z0-9._-]', '_')
+        $OutputPath = Join-Path $releasePath "zabbix-export-$safeTemplate.yaml"
+    }
 }
 
 $login = [Environment]::GetEnvironmentVariable("ZABBIX_USERNAME", "Machine")
@@ -28,6 +35,10 @@ $templateNames = @(
 )
 
 if ($templateNames.Count -eq 0) { throw "No templates found in manifest: $manifestPath" }
+
+if (-not [string]::IsNullOrWhiteSpace($Template)) {
+    $templateNames = @($Template)
+}
 
 function Invoke-ZabbixApi {
     param([string]$Method, [hashtable]$Params, [string]$Token, [int]$Id)
@@ -47,6 +58,11 @@ function Invoke-ZabbixApi {
 
 Write-Host "=== Sprut Monitor Zabbix Native Export ==="
 Write-Host "Release: $ReleaseVersion"
+
+if (-not [string]::IsNullOrWhiteSpace($Template)) {
+    Write-Host "Single template test: $Template"
+}
+
 Write-Host ""
 
 $loginBody = @{

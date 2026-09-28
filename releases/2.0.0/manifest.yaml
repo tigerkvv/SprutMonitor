@@ -1,0 +1,18 @@
+release: 2.0.0
+zabbix_version: "7.0"
+
+export:
+  format: yaml
+  templates:
+    - Provider
+    - EcoFlow Station by API
+    - Mikrotik by SNMP
+
+protected:
+  hosts: true
+  hostMacros: true
+  interfaces: true
+  history: true
+  trends: true
+  events: true
+  problems: true

@@ -169,6 +169,96 @@ Write-Host "Items received: $($allItems.Count)"
 Write-Host "Triggers received: $($allTriggers.Count)"
 Write-Host ""
 
+
+function ConvertTo-Comparable {
+    param(
+        $Value,
+        [string[]]$IgnoreProperties = @()
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if (
+        ($Value -is [System.Collections.IEnumerable]) -and
+        -not ($Value -is [string]) -and
+        -not ($Value -is [System.Collections.IDictionary])
+    ) {
+        $result = @()
+        foreach ($entry in $Value) {
+            $result += ,(ConvertTo-Comparable -Value $entry -IgnoreProperties $IgnoreProperties)
+        }
+        return ,$result
+    }
+
+    if ($Value.PSObject -and $Value.PSObject.Properties.Count -gt 0) {
+        $result = [ordered]@{}
+
+        foreach ($property in ($Value.PSObject.Properties | Sort-Object Name)) {
+            if ($IgnoreProperties -contains $property.Name) {
+                continue
+            }
+
+            $result[$property.Name] = ConvertTo-Comparable -Value $property.Value -IgnoreProperties $IgnoreProperties
+        }
+
+        return $result
+    }
+
+    return [string]$Value
+}
+
+function Get-ConfigDifferences {
+    param(
+        $ReleaseObject,
+        $ActualObject,
+        [string[]]$IgnoreProperties = @()
+    )
+
+    $differences = @()
+
+    foreach ($property in $ReleaseObject.PSObject.Properties) {
+        if ($IgnoreProperties -contains $property.Name) {
+            continue
+        }
+
+        $releaseValue = ConvertTo-Comparable -Value $property.Value -IgnoreProperties $IgnoreProperties
+        $actualProperty = $ActualObject.PSObject.Properties[$property.Name]
+
+        if (-not $actualProperty) {
+            $differences += $property.Name
+            continue
+        }
+
+        $actualValue = ConvertTo-Comparable -Value $actualProperty.Value -IgnoreProperties $IgnoreProperties
+        $releaseJson = $releaseValue | ConvertTo-Json -Depth 100 -Compress
+        $actualJson = $actualValue | ConvertTo-Json -Depth 100 -Compress
+
+        if ($releaseJson -ne $actualJson) {
+            $differences += $property.Name
+        }
+    }
+
+    return @($differences | Sort-Object -Unique)
+}
+
+function Write-VerifyStatus {
+    param(
+        [string]$Name,
+        [string]$Details,
+        [string[]]$Differences = @()
+    )
+
+    if ($Differences.Count -eq 0) {
+        Write-Host "[ACTUAL] $Name -> $Details"
+    }
+    else {
+        Write-Host "[CHANGED] $Name -> $Details"
+        Write-Host "          Differences: $($Differences -join ', ')"
+    }
+}
+
 Write-Host "=== Templates ==="
 
 foreach ($template in $release.managed.templates) {
@@ -186,7 +276,8 @@ foreach ($template in $release.managed.templates) {
         Write-Host "[MISSING] $name"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[CURRENT] $name -> templateid $($found[0].templateid)"
+        $differences = Get-ConfigDifferences -ReleaseObject $template -ActualObject $found[0] -IgnoreProperties @("templateid","uuid","items","triggers","maintenanceid","maintenance_status","maintenance_type","maintenance_from")
+        Write-VerifyStatus -Name $name -Details "templateid $($found[0].templateid)" -Differences $differences
     }
     else {
         Write-Host "[ERROR] Multiple templates with exact name: $name"
@@ -258,7 +349,8 @@ foreach ($releaseTemplate in $release.managed.templates) {
             Write-Host "[MISSING] $itemName [$itemKey] -> template '$templateName'"
         }
         elseif ($found.Count -eq 1) {
-            Write-Host "[CURRENT] $itemName [$itemKey] -> itemid $($found[0].itemid), template '$templateName'"
+            $differences = Get-ConfigDifferences -ReleaseObject $item -ActualObject $found[0] -IgnoreProperties @("itemid","hostid","templateid","uuid","lastclock","lastns","lastvalue","prevvalue","error","state","name_resolved")
+            Write-VerifyStatus -Name "$itemName [$itemKey]" -Details "itemid $($found[0].itemid), template '$templateName'" -Differences $differences
         }
         else {
             Write-Host "[AMBIGUOUS] $itemName [$itemKey] - multiple Items matched in template '$templateName'"
@@ -315,7 +407,8 @@ foreach ($releaseTemplate in $release.managed.templates) {
             Write-Host "[MISSING] $triggerName -> template '$templateName'"
         }
         elseif ($found.Count -eq 1) {
-            Write-Host "[CURRENT] $triggerName -> triggerid $($found[0].triggerid), template '$templateName'"
+            $differences = Get-ConfigDifferences -ReleaseObject $trigger -ActualObject $found[0] -IgnoreProperties @("triggerid","templateid","uuid","lastchange","value","error","state")
+            Write-VerifyStatus -Name $triggerName -Details "triggerid $($found[0].triggerid), template '$templateName'" -Differences $differences
         }
         else {
             Write-Host "[AMBIGUOUS] $triggerName - multiple Triggers matched in template '$templateName'"
@@ -366,8 +459,7 @@ foreach ($valueMap in $release.managed.valueMaps) {
         $allValueMaps |
             Where-Object {
                 $_.name -eq $name -and
-                [string]$_.hostid -eq $targetTemplateId -and
-                (Get-MappingSignature $_) -eq $signature
+                [string]$_.hostid -eq $targetTemplateId
             }
     )
 
@@ -375,7 +467,8 @@ foreach ($valueMap in $release.managed.valueMaps) {
         Write-Host "[MISSING] $name -> template '$templateName'"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[CURRENT] $name -> valuemapid $($found[0].valuemapid), template '$templateName'"
+        $differences = Get-ConfigDifferences -ReleaseObject $valueMap -ActualObject $found[0] -IgnoreProperties @("valuemapid","hostid","uuid")
+        Write-VerifyStatus -Name $name -Details "valuemapid $($found[0].valuemapid), template '$templateName'" -Differences $differences
     }
     else {
         Write-Host "[AMBIGUOUS] $name - multiple Value Maps bound to template '$templateName'"
@@ -495,7 +588,13 @@ foreach ($graph in $release.managed.graphs) {
         Write-Host "[MISSING] $name -> template '$($releaseTemplateNames -join ', ')'"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[CURRENT] $name -> graphid $($found[0].graphid), template '$($releaseTemplateNames -join ', ')'"
+        $differences = Get-ConfigDifferences -ReleaseObject $graph -ActualObject $found[0] -IgnoreProperties @("graphid","templateid","uuid","items")
+        $releaseGraphKeys = @(@($graph.items) | Where-Object { $_.key_ } | ForEach-Object { [string]$_.key_ } | Sort-Object)
+        $actualGraphKeys = @(@($found[0].items) | Where-Object { $_.key_ } | ForEach-Object { [string]$_.key_ } | Sort-Object)
+        if (($releaseGraphKeys | ConvertTo-Json -Compress) -ne ($actualGraphKeys | ConvertTo-Json -Compress)) {
+            $differences += "items"
+        }
+        Write-VerifyStatus -Name $name -Details "graphid $($found[0].graphid), template '$($releaseTemplateNames -join ', ')'" -Differences @($differences | Sort-Object -Unique)
     }
     else {
         Write-Host "[AMBIGUOUS] $name - multiple Graphs bound to template '$($releaseTemplateNames -join ', ')'"
@@ -524,10 +623,11 @@ foreach ($action in $release.managed.triggerActions) {
         Write-Host "[MISSING] $name"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[CURRENT] $name -> actionid $($found[0].actionid)"
+        $differences = Get-ConfigDifferences -ReleaseObject $action -ActualObject $found[0] -IgnoreProperties @("actionid")
+        Write-VerifyStatus -Name $name -Details "actionid $($found[0].actionid)" -Differences $differences
     }
     else {
-        Write-Host "[MULTIPLE] $name"
+        Write-Host "[AMBIGUOUS] $name"
         $found |
             Select-Object actionid,name,status,eventsource |
             Format-Table -AutoSize

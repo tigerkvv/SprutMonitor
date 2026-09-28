@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== Sprut Monitor Zabbix Apply ==="
-Write-Host "Mode: PREVIEW - matching only, no changes will be made"
+Write-Host "Mode: DEV VERIFY - checking current configuration against release, no changes will be made"
 Write-Host ""
 
 if (-not (Test-Path $ReleasePath)) {
@@ -183,10 +183,10 @@ foreach ($template in $release.managed.templates) {
     )
 
     if ($found.Count -eq 0) {
-        Write-Host "[CREATE] $name"
+        Write-Host "[MISSING] $name"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[UPDATE] $name -> templateid $($found[0].templateid)"
+        Write-Host "[CURRENT] $name -> templateid $($found[0].templateid)"
     }
     else {
         Write-Host "[ERROR] Multiple templates with exact name: $name"
@@ -243,9 +243,10 @@ foreach ($releaseTemplate in $release.managed.templates) {
                 Where-Object {
                     [string]$_.hostid -eq $targetTemplateId -and
                     (
-                        ($itemUuid -and [string]$_.uuid -eq $itemUuid) -or
                         (
-                            -not $itemUuid -and
+                            $itemUuid -and [string]$_.uuid -eq $itemUuid
+                        ) -or
+                        (
                             $itemKey -and
                             [string]$_.key_ -eq $itemKey
                         )
@@ -254,10 +255,10 @@ foreach ($releaseTemplate in $release.managed.templates) {
         )
 
         if ($found.Count -eq 0) {
-            Write-Host "[CREATE] $itemName [$itemKey] -> template '$templateName'"
+            Write-Host "[MISSING] $itemName [$itemKey] -> template '$templateName'"
         }
         elseif ($found.Count -eq 1) {
-            Write-Host "[UPDATE] $itemName [$itemKey] -> itemid $($found[0].itemid), template '$templateName'"
+            Write-Host "[CURRENT] $itemName [$itemKey] -> itemid $($found[0].itemid), template '$templateName'"
         }
         else {
             Write-Host "[AMBIGUOUS] $itemName [$itemKey] - multiple Items matched in template '$templateName'"
@@ -299,9 +300,10 @@ foreach ($releaseTemplate in $release.managed.templates) {
                 Where-Object {
                     [string]$_.hostid -eq $targetTemplateId -and
                     (
-                        ($triggerUuid -and [string]$_.uuid -eq $triggerUuid) -or
                         (
-                            -not $triggerUuid -and
+                            $triggerUuid -and [string]$_.uuid -eq $triggerUuid
+                        ) -or
+                        (
                             $triggerExpression -and
                             [string]$_.expression -eq $triggerExpression
                         )
@@ -310,10 +312,10 @@ foreach ($releaseTemplate in $release.managed.templates) {
         )
 
         if ($found.Count -eq 0) {
-            Write-Host "[CREATE] $triggerName -> template '$templateName'"
+            Write-Host "[MISSING] $triggerName -> template '$templateName'"
         }
         elseif ($found.Count -eq 1) {
-            Write-Host "[UPDATE] $triggerName -> triggerid $($found[0].triggerid), template '$templateName'"
+            Write-Host "[CURRENT] $triggerName -> triggerid $($found[0].triggerid), template '$templateName'"
         }
         else {
             Write-Host "[AMBIGUOUS] $triggerName - multiple Triggers matched in template '$templateName'"
@@ -370,10 +372,10 @@ foreach ($valueMap in $release.managed.valueMaps) {
     )
 
     if ($found.Count -eq 0) {
-        Write-Host "[CREATE] $name -> template '$templateName'"
+        Write-Host "[MISSING] $name -> template '$templateName'"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[UPDATE] $name -> valuemapid $($found[0].valuemapid), template '$templateName'"
+        Write-Host "[CURRENT] $name -> valuemapid $($found[0].valuemapid), template '$templateName'"
     }
     else {
         Write-Host "[AMBIGUOUS] $name - multiple Value Maps bound to template '$templateName'"
@@ -490,10 +492,10 @@ foreach ($graph in $release.managed.graphs) {
     )
 
     if ($found.Count -eq 0) {
-        Write-Host "[CREATE] $name -> template '$($releaseTemplateNames -join ', ')'"
+        Write-Host "[MISSING] $name -> template '$($releaseTemplateNames -join ', ')'"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[UPDATE] $name -> graphid $($found[0].graphid), template '$($releaseTemplateNames -join ', ')'"
+        Write-Host "[CURRENT] $name -> graphid $($found[0].graphid), template '$($releaseTemplateNames -join ', ')'"
     }
     else {
         Write-Host "[AMBIGUOUS] $name - multiple Graphs bound to template '$($releaseTemplateNames -join ', ')'"
@@ -519,10 +521,10 @@ foreach ($action in $release.managed.triggerActions) {
     )
 
     if ($found.Count -eq 0) {
-        Write-Host "[CREATE] $name"
+        Write-Host "[MISSING] $name"
     }
     elseif ($found.Count -eq 1) {
-        Write-Host "[UPDATE] $name -> actionid $($found[0].actionid)"
+        Write-Host "[CURRENT] $name -> actionid $($found[0].actionid)"
     }
     else {
         Write-Host "[MULTIPLE] $name"
